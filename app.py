@@ -4,7 +4,7 @@ import os
 import pickle
 import re
 
-from flask import Flask, jsonify, redirect, render_template_string, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template_string, request, session, url_for
 
 try:
     from google.auth.transport.requests import Request
@@ -18,6 +18,8 @@ except ImportError:
     Flow = None
     build = None
     HttpError = Exception
+
+    
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -120,7 +122,7 @@ def gmail_ready():
     return bool(Flow and build and (has_env_credentials or client_secret_file()))
 
 
-def make_flow():
+def make_flow(state=None, code_verifier=None):
     config = google_config()
     redirect_uri = url_for("oauth2callback", _external=True)
 
@@ -129,6 +131,8 @@ def make_flow():
             client_secret_file(),
             scopes=SCOPES,
             redirect_uri=redirect_uri,
+            state=state,
+            code_verifier=code_verifier,
         )
 
     client_config = {
@@ -144,6 +148,8 @@ def make_flow():
         client_config,
         scopes=SCOPES,
         redirect_uri=redirect_uri,
+        state=state,
+        code_verifier=code_verifier,
     )
 
 
@@ -445,6 +451,11 @@ PAGE = """
 </head>
 <body>
   <main>
+    {% with messages = get_flashed_messages() %}
+      {% for message in messages %}
+        <div class="status">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
     <header>
       <div>
         <h1>Email Spam Detection</h1>
@@ -611,6 +622,13 @@ PAGE = """
 
 @app.route("/")
 def index():
+    # Start the Google OAuth flow as soon as the app opens when credentials
+    # are configured. Google still requires the user to sign in and consent.
+    if gmail_ready() and not session.get("credentials") and not session.get("oauth_error"):
+        return redirect(url_for("gmail_login"))
+
+    session.pop("oauth_error", None)
+
     return render_template_string(
         PAGE,
         connected=bool(session.get("credentials")),
@@ -642,6 +660,10 @@ def gmail_login():
         prompt="consent",
     )
     session["state"] = state
+    # PKCE uses a verifier created by this Flow instance. Keep it across the
+    # browser redirect so the callback can use the same verifier to exchange
+    # Google's authorization code.
+    session["code_verifier"] = flow.code_verifier
     return redirect(authorization_url)
 
 
@@ -650,9 +672,28 @@ def oauth2callback():
     if not gmail_ready():
         return redirect(url_for("index"))
 
-    flow = make_flow()
-    flow.fetch_token(authorization_response=request.url)
-    session["credentials"] = credentials_to_dict(flow.credentials)
+    state = session.pop("state", None)
+    code_verifier = session.pop("code_verifier", None)
+    if not state or not code_verifier:
+        session["oauth_error"] = True
+        flash("Google sign-in session expired. Please try connecting again.")
+        return redirect(url_for("index"))
+
+    try:
+        flow = make_flow(state=state, code_verifier=code_verifier)
+        flow.fetch_token(authorization_response=request.url)
+        session["credentials"] = credentials_to_dict(flow.credentials)
+    except Exception as exc:
+        app.logger.exception("Google OAuth callback failed")
+        session["oauth_error"] = True
+        if "Scope has changed" in str(exc):
+            flash(
+                "Google did not grant Gmail read access. Add "
+                "https://www.googleapis.com/auth/gmail.readonly to your OAuth "
+                "Data Access scopes, then reconnect and approve Gmail access."
+            )
+        else:
+            flash(f"Gmail sign-in failed: {exc}")
     return redirect(url_for("index"))
 
 
