@@ -1,0 +1,10 @@
+flask
+google-api-python-client
+google-auth
+google-auth-oauthlib
+scikit-learn
+nltk
+pandas
+numpy
+seaborn
+matplotlib

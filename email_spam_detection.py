@@ -102,14 +102,62 @@ spam['label'].value_counts().plot(kind='bar')
 **Preprocessing the Text in the Dataset**
 """
 
+# ps means small helper name
+# PorterStemmer() cuts words to root word
+# Example: "playing" → "play"
 ps = PorterStemmer()
+
+
+# corpus = empty bag/list
+# We store cleaned messages inside it
 corpus = []
+
+
+# for = repeat again and again
+# i = counting number (0,1,2,3...)
+# range(0, len(spam))
+# 0 = start from first message
+# len(spam) = total number of messages
 for i in range(0, len(spam)):
+
+
+    # review = one message text
+    # re.sub() = replace unwanted things
+    # [^a-zA-Z] = remove numbers and symbols
+    # ' ' = replace with empty space
+    # spam['message'][i] = take one message
     review = re.sub('[^a-zA-Z]', ' ', spam['message'][i])
+
+
+    # lower() = make all words small letters
+    # Example: "HELLO" → "hello"
     review = review.lower()
+
+
+    # split() = break sentence into words
+    # Example: "i like python"
+    # becomes ["i","like","python"]
     review = review.split()
+
+
+    # for word in review = check each word one by one
+    # stopwords.words('english')
+    # common words like is, the, am, are
+    # not word in stopwords = remove useless words
+    # ps.stem(word) = make word short/root word
+    # Example: "running" → "run"
     review = [ps.stem(word) for word in review if not word in stopwords.words('english')]
+
+
+    # ' '.join(review)
+    # join all words back into one sentence
+    # Example: ["i","love","python"]
+    # becomes "i love python"
     review = ' '.join(review)
+
+
+    # append() = add item into list
+    # store cleaned message inside corpus
     corpus.append(review)
 
 # Printing the first 5 values in the corpus list
